@@ -1,6 +1,5 @@
 import fs from 'fs'
 import { AddressInfo } from 'net'
-import os from 'os'
 import { fileURLToPath } from 'url'
 import path from 'path'
 import colors from 'picocolors'
@@ -14,9 +13,9 @@ interface PluginConfig {
     input: string|string[]
 
     /**
-     * Laravel's public directory.
+     * ColdBox's public directory.
      *
-     * @default 'public'
+     * @default 'includes'
      */
     publicDirectory?: string
 
@@ -55,13 +54,6 @@ interface PluginConfig {
     refresh?: boolean|string|string[]|RefreshConfig|RefreshConfig[]
 
     /**
-     * Utilise the valet TLS certificates.
-     *
-     * @default false
-     */
-    valetTls?: string|boolean,
-
-    /**
      * Transform the code while serving.
      */
     transformOnServe?: (code: string, url: DevServerUrl) => string,
@@ -72,7 +64,7 @@ interface RefreshConfig {
     config?: FullReloadConfig,
 }
 
-interface LaravelPlugin extends Plugin {
+interface ColdBoxPlugin extends Plugin {
     config: (config: UserConfig, env: ConfigEnv) => UserConfig
 }
 
@@ -81,47 +73,47 @@ type DevServerUrl = `${'http'|'https'}://${string}:${number}`
 let exitHandlersBound = false
 
 export const refreshPaths = [
-    'app/View/Components/**',
-    'resources/views/**',
-    'resources/lang/**',
-    'lang/**',
-    'routes/**',
+    'handlers/**',
+    'models/**',
+    'layouts/**',
+    'views/**',
+    'config/**',
 ]
 
 /**
- * Laravel plugin for Vite.
+ * ColdBox plugin for Vite.
  *
  * @param config - A config object or relative path(s) of the scripts to be compiled.
  */
-export default function laravel(config: string|string[]|PluginConfig): [LaravelPlugin, ...Plugin[]]  {
+export default function coldbox(config: string|string[]|PluginConfig): [ColdBoxPlugin, ...Plugin[]]  {
     const pluginConfig = resolvePluginConfig(config)
 
     return [
-        resolveLaravelPlugin(pluginConfig),
+        resolveColdBoxPlugin(pluginConfig),
         ...resolveFullReloadConfig(pluginConfig) as Plugin[],
     ];
 }
 
 /**
- * Resolve the Laravel Plugin configuration.
+ * Resolve the ColdBox Plugin configuration.
  */
-function resolveLaravelPlugin(pluginConfig: Required<PluginConfig>): LaravelPlugin {
+function resolveColdBoxPlugin(pluginConfig: Required<PluginConfig>): ColdBoxPlugin {
     let viteDevServerUrl: DevServerUrl
     let resolvedConfig: ResolvedConfig
 
     const defaultAliases: Record<string, string> = {
-        '@': '/resources/js',
+        '@': '/resources/assets/js',
     };
 
     return {
-        name: 'laravel',
+        name: 'coldbox',
         enforce: 'post',
         config: (userConfig, { command, mode }) => {
             const ssr = !! userConfig.build?.ssr
             const env = loadEnv(mode, userConfig.envDir || process.cwd(), '')
             const assetUrl = env.ASSET_URL ?? ''
             const serverConfig = command === 'serve'
-                ? (resolveValetServerConfig(pluginConfig.valetTls) ?? resolveEnvironmentServerConfig(env))
+                ? resolveEnvironmentServerConfig(env)
                 : undefined
 
             ensureCommandShouldRunInEnvironment(command, env)
@@ -138,12 +130,7 @@ function resolveLaravelPlugin(pluginConfig: Required<PluginConfig>): LaravelPlug
                     assetsInlineLimit: userConfig.build?.assetsInlineLimit ?? 0,
                 },
                 server: {
-                    origin: userConfig.server?.origin ?? '__laravel_vite_placeholder__',
-                    ...(process.env.LARAVEL_SAIL ? {
-                        host: userConfig.server?.host ?? '0.0.0.0',
-                        port: userConfig.server?.port ?? (env.VITE_PORT ? parseInt(env.VITE_PORT) : 5173),
-                        strictPort: userConfig.server?.strictPort ?? true,
-                    } : undefined),
+                    origin: userConfig.server?.origin ?? '__coldbox_vite_placeholder__',
                     ...(serverConfig ? {
                         host: userConfig.server?.host ?? serverConfig.host,
                         hmr: userConfig.server?.hmr === false ? false : {
@@ -180,15 +167,12 @@ function resolveLaravelPlugin(pluginConfig: Required<PluginConfig>): LaravelPlug
         },
         transform(code) {
             if (resolvedConfig.command === 'serve') {
-                code = code.replace(/__laravel_vite_placeholder__/g, viteDevServerUrl)
+                code = code.replace(/__coldbox_vite_placeholder__/g, viteDevServerUrl)
 
                 return pluginConfig.transformOnServe(code, viteDevServerUrl)
             }
         },
         configureServer(server) {
-            const envDir = resolvedConfig.envDir || process.cwd()
-            const appUrl = loadEnv(resolvedConfig.mode, envDir, 'APP_URL').APP_URL ?? 'undefined'
-
             server.httpServer?.once('listening', () => {
                 const address = server.httpServer?.address()
 
@@ -198,9 +182,8 @@ function resolveLaravelPlugin(pluginConfig: Required<PluginConfig>): LaravelPlug
                     fs.writeFileSync(pluginConfig.hotFile, viteDevServerUrl)
 
                     setTimeout(() => {
-                        server.config.logger.info(`\n  ${colors.red(`${colors.bold('LARAVEL')} ${laravelVersion()}`)}  ${colors.dim('plugin')} ${colors.bold(`v${pluginVersion()}`)}`)
+                        server.config.logger.info(`\n  ${colors.red(`${colors.bold('COLDBOX')} ${coldboxVersion()}`)}  ${colors.dim('plugin')} ${colors.bold(`v${pluginVersion()}`)}`)
                         server.config.logger.info('')
-                        server.config.logger.info(`  ${colors.green('➜')}  ${colors.bold('APP_URL')}: ${colors.cyan(appUrl.replace(/:(\d+)/, (_, port) => `:${colors.bold(port)}`))}`)
                     }, 100)
                 }
             })
@@ -225,7 +208,7 @@ function resolveLaravelPlugin(pluginConfig: Required<PluginConfig>): LaravelPlug
                     res.statusCode = 404
 
                     res.end(
-                        fs.readFileSync(path.join(dirname(), 'dev-server-index.html')).toString().replace(/{{ APP_URL }}/g, appUrl)
+                        fs.readFileSync(path.join(dirname(), 'dev-server-index.html')).toString()
                     )
                 }
 
@@ -239,42 +222,30 @@ function resolveLaravelPlugin(pluginConfig: Required<PluginConfig>): LaravelPlug
  * Validate the command can run in the given environment.
  */
 function ensureCommandShouldRunInEnvironment(command: 'build'|'serve', env: Record<string, string>): void {
-    if (command === 'build' || env.LARAVEL_BYPASS_ENV_CHECK === '1') {
+    if (command === 'build' || env.COLDBOX_BYPASS_ENV_CHECK === '1') {
         return;
     }
 
-    if (typeof env.LARAVEL_VAPOR !== 'undefined') {
-        throw Error('You should not run the Vite HMR server on Vapor. You should build your assets for production instead. To disable this ENV check you may set LARAVEL_BYPASS_ENV_CHECK=1');
-    }
-
-    if (typeof env.LARAVEL_FORGE !== 'undefined') {
-        throw Error('You should not run the Vite HMR server in your Forge deployment script. You should build your assets for production instead. To disable this ENV check you may set LARAVEL_BYPASS_ENV_CHECK=1');
-    }
-
-    if (typeof env.LARAVEL_ENVOYER !== 'undefined') {
-        throw Error('You should not run the Vite HMR server in your Envoyer hook. You should build your assets for production instead. To disable this ENV check you may set LARAVEL_BYPASS_ENV_CHECK=1')
-    }
-
     if (typeof env.CI !== 'undefined') {
-        throw Error('You should not run the Vite HMR server in CI environments. You should build your assets for production instead. To disable this ENV check you may set LARAVEL_BYPASS_ENV_CHECK=1')
+        throw Error('You should not run the Vite HMR server in CI environments. You should build your assets for production instead. To disable this ENV check you may set COLDBOX_BYPASS_ENV_CHECK=1')
     }
 }
 
 /**
- * The version of Laravel being run.
+ * The version of ColdBox being run.
  */
-function laravelVersion(): string {
+function coldboxVersion(): string {
     try {
-        const composer = JSON.parse(fs.readFileSync('composer.lock').toString())
+        const boxJSON = JSON.parse(fs.readFileSync('coldbox/box.json').toString())
 
-        return composer.packages?.find((composerPackage: {name: string}) => composerPackage.name === 'laravel/framework')?.version ?? ''
+        return boxJSON.version ?? ''
     } catch {
         return ''
     }
 }
 
 /**
- * The version of the Laravel Vite plugin being run.
+ * The version of the ColdBox Vite plugin being run.
  */
 function pluginVersion(): string {
     try {
@@ -289,7 +260,7 @@ function pluginVersion(): string {
  */
 function resolvePluginConfig(config: string|string[]|PluginConfig): Required<PluginConfig> {
     if (typeof config === 'undefined') {
-        throw new Error('laravel-vite-plugin: missing configuration.')
+        throw new Error('coldbox-vite-plugin: missing configuration.')
     }
 
     if (typeof config === 'string' || Array.isArray(config)) {
@@ -297,14 +268,14 @@ function resolvePluginConfig(config: string|string[]|PluginConfig): Required<Plu
     }
 
     if (typeof config.input === 'undefined') {
-        throw new Error('laravel-vite-plugin: missing configuration for "input".')
+        throw new Error('coldbox-vite-plugin: missing configuration for "input".')
     }
 
     if (typeof config.publicDirectory === 'string') {
         config.publicDirectory = config.publicDirectory.trim().replace(/^\/+/, '')
 
         if (config.publicDirectory === '') {
-            throw new Error('laravel-vite-plugin: publicDirectory must be a subdirectory. E.g. \'public\'.')
+            throw new Error('coldbox-vite-plugin: publicDirectory must be a subdirectory. E.g. \'public\'.')
         }
     }
 
@@ -312,7 +283,7 @@ function resolvePluginConfig(config: string|string[]|PluginConfig): Required<Plu
         config.buildDirectory = config.buildDirectory.trim().replace(/^\/+/, '').replace(/\/+$/, '')
 
         if (config.buildDirectory === '') {
-            throw new Error('laravel-vite-plugin: buildDirectory must be a subdirectory. E.g. \'build\'.')
+            throw new Error('coldbox-vite-plugin: buildDirectory must be a subdirectory. E.g. \'build\'.')
         }
     }
 
@@ -326,13 +297,12 @@ function resolvePluginConfig(config: string|string[]|PluginConfig): Required<Plu
 
     return {
         input: config.input,
-        publicDirectory: config.publicDirectory ?? 'public',
+        publicDirectory: config.publicDirectory ?? 'includes',
         buildDirectory: config.buildDirectory ?? 'build',
         ssr: config.ssr ?? config.input,
         ssrOutputDirectory: config.ssrOutputDirectory ?? 'bootstrap/ssr',
         refresh: config.refresh ?? false,
-        hotFile: config.hotFile ?? path.join((config.publicDirectory ?? 'public'), 'hot'),
-        valetTls: config.valetTls ?? false,
+        hotFile: config.hotFile ?? path.join((config.publicDirectory ?? 'includes'), 'hot'),
         transformOnServe: config.transformOnServe ?? ((code) => code),
     }
 }
@@ -388,7 +358,7 @@ function resolveFullReloadConfig({ refresh: config }: Required<PluginConfig>): P
 
         /* eslint-disable-next-line @typescript-eslint/ban-ts-comment */
         /** @ts-ignore */
-        plugin.__laravel_plugin_config = c
+        plugin.__coldbox_plugin_config = c
 
         return plugin
     })
@@ -417,7 +387,6 @@ function resolveDevServerUrl(address: AddressInfo, config: ResolvedConfig): DevS
 function isIpv6(address: AddressInfo): boolean {
     return address.family === 'IPv6'
         // In node >=18.0 <18.4 this was an integer value. This was changed in a minor version.
-        // See: https://github.com/laravel/vite-plugin/issues/103
         // eslint-disable-next-line @typescript-eslint/ban-ts-comment
         // @ts-ignore-next-line
         || address.family === 6;
@@ -432,7 +401,7 @@ function noExternalInertiaHelpers(config: UserConfig): true|Array<string|RegExp>
     /* eslint-disable-next-line @typescript-eslint/ban-ts-comment */
     /* @ts-ignore */
     const userNoExternal = (config.ssr as SSROptions|undefined)?.noExternal
-    const pluginNoExternal = ['laravel-vite-plugin']
+    const pluginNoExternal = ['coldbox-vite-plugin']
 
     if (userNoExternal === true) {
         return true
@@ -466,10 +435,6 @@ function resolveEnvironmentServerConfig(env: Record<string, string>): {
 
     const host = resolveHostFromEnv(env)
 
-    if (! host) {
-        throw Error(`Unable to determine the host from the environment's APP_URL: [${env.APP_URL}].`)
-    }
-
     return {
         hmr: { host },
         host,
@@ -483,60 +448,13 @@ function resolveEnvironmentServerConfig(env: Record<string, string>): {
 /**
  * Resolve the host name from the environment.
  */
-function resolveHostFromEnv(env: Record<string, string>): string|undefined
+function resolveHostFromEnv(env: Record<string, string>): string
 {
     try {
         return new URL(env.APP_URL).host
     } catch {
-        return
+        return 'localhost'
     }
-}
-
-
-/**
- * Resolve the valet server config for the given host.
- */
-function resolveValetServerConfig(host: string|boolean): {
-    hmr?: { host: string }
-    host?: string,
-    https?: { cert: Buffer, key: Buffer }
-}|undefined {
-    if (host === false) {
-        return
-    }
-
-    host = host === true ? resolveValetHost() : host
-
-    const keyPath = path.resolve(os.homedir(), `.config/valet/Certificates/${host}.key`)
-    const certPath = path.resolve(os.homedir(), `.config/valet/Certificates/${host}.crt`)
-
-    if (! fs.existsSync(keyPath) || ! fs.existsSync(certPath)) {
-        throw Error(`Unable to find Valet certificate files for your host [${host}]. Ensure you have run "valet secure".`)
-    }
-
-    return {
-        hmr: { host },
-        host,
-        https: {
-            key: fs.readFileSync(keyPath),
-            cert: fs.readFileSync(certPath),
-        },
-    }
-}
-
-/**
- * Resolve the valet valet host for the current directory.
- */
-function resolveValetHost(): string {
-    const configPath = os.homedir() + `/.config/valet/config.json`
-
-    if (! fs.existsSync(configPath)) {
-        throw Error('Unable to find the Valet configuration file. You will need to manually specify the host in the `valetTls` configuration option.')
-    }
-
-    const config: { tld: string } = JSON.parse(fs.readFileSync(configPath, 'utf-8'))
-
-    return path.basename(process.cwd()) + '.' + config.tld
 }
 
 /**

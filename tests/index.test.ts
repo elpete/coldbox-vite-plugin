@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import laravel from '../src'
 import { resolvePageComponent } from '../src/inertia-helpers';
 
-describe('laravel-vite-plugin', () => {
+describe('coldbox-vite-plugin', () => {
     afterEach(() => {
         vi.clearAllMocks()
     })
@@ -11,12 +11,12 @@ describe('laravel-vite-plugin', () => {
         /* eslint-disable-next-line @typescript-eslint/ban-ts-comment */
         /* @ts-ignore */
         expect(() => laravel())
-            .toThrowError('laravel-vite-plugin: missing configuration.');
+            .toThrowError('coldbox-vite-plugin: missing configuration.');
 
         /* eslint-disable-next-line @typescript-eslint/ban-ts-comment */
         /* @ts-ignore */
         expect(() => laravel({}))
-            .toThrowError('laravel-vite-plugin: missing configuration for "input".');
+            .toThrowError('coldbox-vite-plugin: missing configuration for "input".');
     })
 
     it('accepts a single input', () => {
@@ -231,7 +231,7 @@ describe('laravel-vite-plugin', () => {
 
         const noSsrConfig = plugin.config({ build: { ssr: true } }, { command: 'build', mode: 'production' })
         /* @ts-ignore */
-        expect(noSsrConfig.ssr.noExternal).toEqual(['laravel-vite-plugin'])
+        expect(noSsrConfig.ssr.noExternal).toEqual(['coldbox-vite-plugin'])
 
         /* @ts-ignore */
         const nothingExternalConfig = plugin.config({ ssr: { noExternal: true }, build: { ssr: true } }, { command: 'build', mode: 'production' })
@@ -241,12 +241,12 @@ describe('laravel-vite-plugin', () => {
         /* @ts-ignore */
         const arrayNoExternalConfig = plugin.config({ ssr: { noExternal: ['foo'] }, build: { ssr: true } }, { command: 'build', mode: 'production' })
         /* @ts-ignore */
-        expect(arrayNoExternalConfig.ssr.noExternal).toEqual(['foo', 'laravel-vite-plugin'])
+        expect(arrayNoExternalConfig.ssr.noExternal).toEqual(['foo', 'coldbox-vite-plugin'])
 
         /* @ts-ignore */
         const stringNoExternalConfig = plugin.config({ ssr: { noExternal: 'foo' }, build: { ssr: true } }, { command: 'build', mode: 'production' })
         /* @ts-ignore */
-        expect(stringNoExternalConfig.ssr.noExternal).toEqual(['foo', 'laravel-vite-plugin'])
+        expect(stringNoExternalConfig.ssr.noExternal).toEqual(['foo', 'coldbox-vite-plugin'])
     })
 
     it('does not configure full reload when configuration it not an object', () => {
@@ -288,7 +288,7 @@ describe('laravel-vite-plugin', () => {
 
         expect(plugins.length).toBe(2)
         /** @ts-ignore */
-        expect(plugins[1].__laravel_plugin_config).toEqual({
+        expect(plugins[1].__coldbox_plugin_config).toEqual({
             paths: ['app/View/Components/**', 'resources/views/**', 'resources/lang/**', 'lang/**', 'routes/**'],
         })
     })
@@ -301,7 +301,7 @@ describe('laravel-vite-plugin', () => {
 
         expect(plugins.length).toBe(2)
         /** @ts-ignore */
-        expect(plugins[1].__laravel_plugin_config).toEqual({
+        expect(plugins[1].__coldbox_plugin_config).toEqual({
             paths: ['path/to/watch/**'],
         })
     })
@@ -314,7 +314,7 @@ describe('laravel-vite-plugin', () => {
 
         expect(plugins.length).toBe(2)
         /** @ts-ignore */
-        expect(plugins[1].__laravel_plugin_config).toEqual({
+        expect(plugins[1].__coldbox_plugin_config).toEqual({
             paths: ['path/to/watch/**', 'another/to/watch/**'],
         })
     })
@@ -330,7 +330,7 @@ describe('laravel-vite-plugin', () => {
 
         expect(plugins.length).toBe(2)
         /** @ts-ignore */
-        expect(plugins[1].__laravel_plugin_config).toEqual({
+        expect(plugins[1].__coldbox_plugin_config).toEqual({
             paths: ['path/to/watch/**', 'another/to/watch/**'],
             config: { delay: 987 }
         })
@@ -353,12 +353,12 @@ describe('laravel-vite-plugin', () => {
 
         expect(plugins.length).toBe(3)
         /** @ts-ignore */
-        expect(plugins[1].__laravel_plugin_config).toEqual({
+        expect(plugins[1].__coldbox_plugin_config).toEqual({
             paths: ['path/to/watch/**'],
             config: { delay: 987 }
         })
         /** @ts-ignore */
-        expect(plugins[2].__laravel_plugin_config).toEqual({
+        expect(plugins[2].__coldbox_plugin_config).toEqual({
             paths: ['another/to/watch/**'],
             config: { delay: 123 }
         })
